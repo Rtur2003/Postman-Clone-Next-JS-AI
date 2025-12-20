@@ -45,55 +45,23 @@ import {
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-
-type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
-type HeaderRow = { id: string; key: string; value: string; enabled: boolean }
-type ParamRow = { id: string; key: string; value: string; enabled: boolean }
-type AuthState =
-  | { type: "none" }
-  | { type: "bearer"; token: string }
-  | { type: "basic"; username: string; password: string }
-type HistoryEntry = {
-  id: string
-  method: HttpMethod
-  url: string
-  status?: number
-  timeMs?: number
-  timestamp: number
-}
-type ResponseSnapshot = {
-  ok: boolean
-  status: number
-  statusText: string
-  timeMs: number
-  size: number
-  headers: { key: string; value: string }[]
-  body: string
-  rawBody: string
-  contentType: string
-}
-type Environment = {
-  id: string
-  name: string
-  variables: { id: string; key: string; value: string; enabled: boolean }[]
-}
-type SavedRequest = {
-  id: string
-  name: string
-  method: HttpMethod
-  url: string
-  headers: HeaderRow[]
-  params: ParamRow[]
-  body: string
-  auth: AuthState
-}
-
-const HISTORY_STORAGE_KEY = "postman_clone_history_v1"
-const ENV_STORAGE_KEY = "postman_clone_envs_v1"
-const COLLECTION_STORAGE_KEY = "postman_clone_saved_requests_v1"
-const METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"]
-const DEFAULT_URL = "https://jsonplaceholder.typicode.com/posts/1"
-const HISTORY_LIMIT = 25
+import { STORAGE_KEYS, CONFIG, HTTP_METHODS } from "@/lib/constants"
+import { safeGetItem, safeSetItem, safeRemoveItem } from "@/lib/storage"
+import type {
+  HttpMethod,
+  HeaderRow,
+  ParamRow,
+  AuthState,
+  HistoryEntry,
+  ResponseSnapshot,
+  Environment,
+  SavedRequest,
+} from "@/lib/types"
+import {
+  isHistoryEntryArray,
+  isEnvironmentArray,
+  isSavedRequestArray,
+} from "@/lib/types"
 
 const createId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
@@ -162,12 +130,12 @@ export default function Home() {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = React.useState(false)
   const [method, setMethod] = React.useState<HttpMethod>("GET")
-  const [url, setUrl] = React.useState(DEFAULT_URL)
+  const [url, setUrl] = React.useState(CONFIG.DEFAULT_URL)
   const [headers, setHeaders] = React.useState<HeaderRow[]>([
     { id: createId(), key: "Accept", value: "application/json", enabled: true },
   ])
   const [queryParams, setQueryParams] = React.useState<ParamRow[]>(
-    parseParamsFromUrl(DEFAULT_URL)
+    parseParamsFromUrl(CONFIG.DEFAULT_URL)
   )
   const [auth, setAuth] = React.useState<AuthState>({ type: "none" })
   const [body, setBody] = React.useState('{\n  "title": "Hello from Postman Clone"\n}')
@@ -187,55 +155,40 @@ export default function Home() {
 
   React.useEffect(() => {
     if (typeof window === "undefined") return
-    const savedHistory = window.localStorage.getItem(HISTORY_STORAGE_KEY)
+    
+    const savedHistory = safeGetItem(STORAGE_KEYS.HISTORY, isHistoryEntryArray)
     if (savedHistory) {
-      try {
-        setHistory(JSON.parse(savedHistory) as HistoryEntry[])
-      } catch {
-        // ignore malformed history
-      }
+      setHistory(savedHistory)
     }
 
-    const savedEnvs = window.localStorage.getItem(ENV_STORAGE_KEY)
+    const savedEnvs = safeGetItem(STORAGE_KEYS.ENVIRONMENTS, isEnvironmentArray)
     if (savedEnvs) {
-      try {
-        const parsed = JSON.parse(savedEnvs) as Environment[]
-        setEnvironments(parsed)
-        setActiveEnv(parsed[0]?.id ?? null)
-      } catch {
-        // ignore malformed envs
-      }
+      setEnvironments(savedEnvs)
+      setActiveEnv(savedEnvs[0]?.id ?? null)
     } else {
       setActiveEnv("env-default")
     }
 
-    const savedCollection = window.localStorage.getItem(COLLECTION_STORAGE_KEY)
+    const savedCollection = safeGetItem(
+      STORAGE_KEYS.COLLECTION,
+      isSavedRequestArray
+    )
     if (savedCollection) {
-      try {
-        setSavedRequests(JSON.parse(savedCollection) as SavedRequest[])
-      } catch {
-        // ignore malformed saved requests
-      }
+      setSavedRequests(savedCollection)
     }
   }, [])
 
   const persistHistory = React.useCallback((items: HistoryEntry[]) => {
-    if (typeof window === "undefined") return
-    window.localStorage.setItem(
-      HISTORY_STORAGE_KEY,
-      JSON.stringify(items.slice(0, HISTORY_LIMIT))
-    )
+    safeSetItem(STORAGE_KEYS.HISTORY, items.slice(0, CONFIG.HISTORY_LIMIT))
   }, [])
 
   const persistEnvironments = React.useCallback((envs: Environment[]) => {
-    if (typeof window === "undefined") return
-    window.localStorage.setItem(ENV_STORAGE_KEY, JSON.stringify(envs))
+    safeSetItem(STORAGE_KEYS.ENVIRONMENTS, envs)
   }, [])
 
   const persistSavedRequests = React.useCallback(
     (items: SavedRequest[]) => {
-      if (typeof window === "undefined") return
-      window.localStorage.setItem(COLLECTION_STORAGE_KEY, JSON.stringify(items))
+      safeSetItem(STORAGE_KEYS.COLLECTION, items)
     },
     []
   )
@@ -243,7 +196,7 @@ export default function Home() {
   const pushHistory = React.useCallback(
     (entry: HistoryEntry) => {
       setHistory((prev) => {
-        const next = [entry, ...prev].slice(0, HISTORY_LIMIT)
+        const next = [entry, ...prev].slice(0, CONFIG.HISTORY_LIMIT)
         persistHistory(next)
         return next
       })
@@ -253,9 +206,7 @@ export default function Home() {
 
   const clearHistory = React.useCallback(() => {
     setHistory([])
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(HISTORY_STORAGE_KEY)
-    }
+    safeRemoveItem(STORAGE_KEYS.HISTORY)
   }, [])
 
   const updateHeader = React.useCallback(
@@ -622,7 +573,7 @@ export default function Home() {
                         <SelectValue placeholder="Metod" />
                       </SelectTrigger>
                       <SelectContent>
-                        {METHODS.map((item) => (
+                        {HTTP_METHODS.map((item) => (
                           <SelectItem key={item} value={item}>
                             {item}
                           </SelectItem>
@@ -664,7 +615,7 @@ export default function Home() {
                     <div className="space-y-2">
                       {queryParams.length === 0 ? (
                         <div className="text-muted-foreground rounded-md border border-dashed px-3 py-2 text-sm">
-                          No params added. Click "Add param" to create one.
+                          No params added. Click &quot;Add param&quot; to create one.
                         </div>
                       ) : (
                         queryParams.map((param) => (
