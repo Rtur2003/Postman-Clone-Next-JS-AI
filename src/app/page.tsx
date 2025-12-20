@@ -664,7 +664,7 @@ export default function Home() {
                     <div className="space-y-2">
                       {queryParams.length === 0 ? (
                         <div className="text-muted-foreground rounded-md border border-dashed px-3 py-2 text-sm">
-                          No params added. Click "Add param" to create one.
+                          No params added. Click &quot;Add param&quot; to create one.
                         </div>
                       ) : (
                         queryParams.map((param) => (
